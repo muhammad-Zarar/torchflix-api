@@ -1,4 +1,4 @@
-fastapi
+fastapi==0.104.1
 moviebox-api==0.3.4
-uvicorn
+uvicorn==0.24.0
 pydantic>=2.11.7

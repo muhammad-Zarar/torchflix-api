@@ -1,7 +1,11 @@
 import os
+# THE MAGIC BYPASS: Force the library to use the unprotected mirror before it loads!
+os.environ["MOVIEBOX_API_HOST"] = "v.moviebox.ph"
+
 import random
 import traceback
-from fastapi import FastAPI, Depends, HTTPException, Security
+import logging
+from fastapi import FastAPI, Depends, HTTPException, Security, Request
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +16,10 @@ from moviebox_api import (
     Recommend, PopularSearch, HotMoviesAndTVSeries
 )
 
-# Your residential proxies to prevent Vercel from getting a 403 IP Ban
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Residential proxies for extra safety
 RAW_PROXIES = [
     "31.59.20.176:6754:kfcqidym:pb146svuz0dy",
     "23.95.150.145:6114:kfcqidym:pb146svuz0dy",
@@ -31,13 +38,7 @@ ip, port, user, pw = selected.split(":")
 PROXY_URL = f"http://{user}:{pw}@{ip}:{port}"
 
 app = FastAPI(title="TorchFlix API")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 API_KEY = "elijah2909_secret_key"
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -46,7 +47,6 @@ async def get_api_key(api_key: str = Security(api_key_header)):
     if api_key == API_KEY: return api_key
     raise HTTPException(status_code=403, detail="Invalid API Key.")
 
-# Initialize pure MovieBox session
 session = Session(proxy=PROXY_URL)
 
 @app.get("/", response_class=HTMLResponse)
@@ -75,21 +75,18 @@ async def get_trending(api_key: str = Depends(get_api_key)):
     try: return await Trending(session).get_content()
     except Exception as e: return JSONResponse(status_code=500, content={"error": str(e)})
 
-# --- THE PURE, ORIGINAL VPS DOWNLOAD LOGIC ---
 @app.get("/api/media-files")
 async def get_media_files(query: str, type: str = "movie", season: int = 1, episode: int = 1, api_key: str = Depends(get_api_key)):
     try:
         target_item = await _get_target_item(query, type)
-        
         if type == "movie": 
             details = await DownloadableMovieFilesDetail(session, target_item).get_content_model()
         else: 
             details = await DownloadableTVSeriesFilesDetail(session, target_item).get_content_model(season=season, episode=episode)
-        
+            
         videos = [{"resolution": getattr(d, 'resolution', 0), "url": str(getattr(d, 'url', '')), "size": getattr(d, 'size', 0), "ext": getattr(d, 'ext', 'mp4')} for d in details.downloads]
         subs = [{"language": getattr(c, 'lanName', ''), "url": str(getattr(c, 'url', '')), "ext": getattr(c, 'ext', 'srt')} for c in details.captions]
-        
-        return {"status": "success", "title": target_item.title, "videos": videos, "subtitles": subs}
+        return {"status": "success", "title": target_item.title, "videos": videos, "subtitles": subs, "mirror_used": os.environ.get("MOVIEBOX_API_HOST")}
     except Exception as e: 
         return JSONResponse(status_code=500, content={"error": str(e), "trace": traceback.format_exc()})
 
