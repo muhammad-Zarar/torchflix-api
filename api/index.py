@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from moviebox_api import (
     Search, Session, SubjectType, 
+    DownloadableMovieFilesDetail, DownloadableTVSeriesFilesDetail,
     Trending, Homepage, MovieDetails, TVSeriesDetails, 
     Recommend, PopularSearch, HotMoviesAndTVSeries
 )
@@ -30,7 +31,13 @@ ip, port, user, pw = selected.split(":")
 PROXY_URL = f"http://{user}:{pw}@{ip}:{port}"
 
 app = FastAPI(title="TorchFlix API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 API_KEY = "elijah2909_secret_key"
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -39,6 +46,7 @@ async def get_api_key(api_key: str = Security(api_key_header)):
     if api_key == API_KEY: return api_key
     raise HTTPException(status_code=403, detail="Invalid API Key.")
 
+# Initialize Proxy Session properly
 session = Session(proxy=PROXY_URL)
 
 @app.get("/", response_class=HTMLResponse)
@@ -68,47 +76,55 @@ async def get_trending(api_key: str = Depends(get_api_key)):
     try: return await Trending(session).get_content()
     except Exception as e: return JSONResponse(status_code=500, content={"error": str(e)})
 
+
+# ==========================================
+# SUPER DEBUGGER ENDPOINT FOR MEDIA FILES
+# ==========================================
 @app.get("/api/media-files")
 async def get_media_files(query: str, type: str = "movie", season: int = 1, episode: int = 1, api_key: str = Depends(get_api_key)):
+    debug_log = {
+        "1_proxy_used": PROXY_URL.split("@")[1],  # Only show IP:Port for safety
+        "2_target_found": False,
+        "3_details_endpoint_raw": None,
+        "4_download_endpoint_raw": None,
+        "5_errors": []
+    }
+    
     try:
+        # Step 1: Get the movie/series ID
         target_item = await _get_target_item(query, type)
-        videos = []
+        debug_log["2_target_found"] = {"title": target_item.title, "id": target_item.subjectId}
         
-        # We completely bypass the blocked `DownloadableMovieFilesDetail` class 
-        # and pull the raw stream URLs directly from the json payload!
-        
-        if type == "movie": 
-            details_model = await MovieDetails(target_item, session).get_json_details_extractor_model()
-            subject = details_model.resData.subject
-            if getattr(subject, 'trailer', None) and subject.trailer.videoAddress:
-                videos.append({
-                    "resolution": subject.trailer.videoAddress.height,
-                    "url": str(subject.trailer.videoAddress.url),
-                    "size": subject.trailer.videoAddress.size,
-                    "ext": "mp4",
-                    "type": "Trailer / Stream"
-                })
-        else: 
-            details_model = await TVSeriesDetails(target_item, session).get_json_details_extractor_model()
-            subject = details_model.resData.subject
-            if getattr(subject, 'trailer', None) and subject.trailer.videoAddress:
-                videos.append({
-                    "resolution": subject.trailer.videoAddress.height,
-                    "url": str(subject.trailer.videoAddress.url),
-                    "size": subject.trailer.videoAddress.size,
-                    "ext": "mp4",
-                    "type": f"Trailer / Stream (Season {season} Episode {episode})"
-                })
-        
+        # Step 2: Dump the RAW details endpoint
+        try:
+            if type == "movie": 
+                details = await MovieDetails(target_item, session).get_content()
+            else: 
+                details = await TVSeriesDetails(target_item, session).get_content()
+            debug_log["3_details_endpoint_raw"] = details
+        except Exception as e:
+            debug_log["5_errors"].append(f"Details Endpoint Error: {str(e)}")
+
+        # Step 3: Dump the RAW download endpoint
+        try:
+            if type == "movie": 
+                dl = await DownloadableMovieFilesDetail(session, target_item).get_content()
+            else: 
+                dl = await DownloadableTVSeriesFilesDetail(session, target_item).get_content(season=season, episode=episode)
+            debug_log["4_download_endpoint_raw"] = dl
+        except Exception as e:
+            debug_log["5_errors"].append(f"Download Endpoint Error: {str(e)}")
+
+        # Return the giant debug JSON
         return {
-            "status": "success", 
-            "title": target_item.title, 
-            "videos": videos, 
-            "subtitles": getattr(target_item, "subtitles", []),
-            "bypassed_403": True
+            "status": "DEBUG_MODE_ACTIVE", 
+            "note": "Examine the raw payloads below to find the video links.",
+            "debug_log": debug_log
         }
+        
     except Exception as e: 
-        return JSONResponse(status_code=500, content={"error": str(e), "trace": traceback.format_exc()})
+        return JSONResponse(status_code=500, content={"error": "Total Failure", "trace": traceback.format_exc(), "debug_log": debug_log})
+
 
 @app.get("/api/homepage")
 async def get_homepage(api_key: str = Depends(get_api_key)):
