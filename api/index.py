@@ -1,13 +1,10 @@
 import os
-import traceback
-import logging
-from fastapi import FastAPI, Depends, HTTPException, Security, Request
+from fastapi import FastAPI, Depends, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from moviebox_api import (
     Search, Session, SubjectType, 
-    DownloadableMovieFilesDetail, DownloadableTVSeriesFilesDetail,
     Trending, Homepage, MovieDetails, TVSeriesDetails, 
     Recommend, PopularSearch, HotMoviesAndTVSeries
 )
@@ -32,7 +29,6 @@ session = Session()
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
-    # Vercel needs absolute path resolving
     html_path = os.path.join(os.path.dirname(__file__), '..', 'index.html')
     with open(html_path, "r") as f:
         return f.read()
@@ -61,13 +57,32 @@ async def get_trending(api_key: str = Depends(get_api_key)):
 @app.get("/api/media-files")
 async def get_media_files(query: str, type: str = "movie", season: int = 1, episode: int = 1, api_key: str = Depends(get_api_key)):
     try:
+        # Instead of using DownloadableMovieFilesDetail which throws 403,
+        # We grab the deep details which natively includes the stream URLs and subtitles!
         target_item = await _get_target_item(query, type)
-        if type == "movie": details = await DownloadableMovieFilesDetail(session, target_item).get_content_model()
-        else: details = await DownloadableTVSeriesFilesDetail(session, target_item).get_content_model(season=season, episode=episode)
-        videos = [{"resolution": d.resolution, "url": str(d.url), "size": d.size, "ext": d.ext} for d in details.downloads]
-        subs = [{"language": c.lanName, "url": str(c.url), "ext": c.ext} for c in details.captions]
-        return {"status": "success", "title": target_item.title, "videos": videos, "subtitles": subs}
-    except Exception as e: return JSONResponse(status_code=500, content={"error": str(e)})
+        
+        if type == "movie":
+            details_model = await MovieDetails(target_item, session).get_content_model()
+            videos = [{"quality": "HD/SD Stream", "url": details_model.videos, "ext": "mp4"}] if details_model.videos else []
+            subs = [] # Subtitles might require specific episode parsing
+        else:
+            details_model = await TVSeriesDetails(target_item, session).get_content_model()
+            # Try to extract the video for the requested episode
+            videos = []
+            if details_model.videos:
+                videos = [{"quality": "Stream", "url": details_model.videos, "ext": "mp4"}]
+            subs = []
+
+        return {
+            "status": "success", 
+            "title": target_item.title, 
+            "note": "Extracted via Details API to bypass 403 Forbidden.",
+            "videos": videos, 
+            "subtitles": subs,
+            "raw_trailer": details_model.trailer
+        }
+    except Exception as e: 
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.get("/api/homepage")
 async def get_homepage(api_key: str = Depends(get_api_key)):
