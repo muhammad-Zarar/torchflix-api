@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TorchFlix Developer APIs</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #0b0c10; color: #c9d1d9; font-family: -apple-system, sans-serif; }
+        .grid-bg { background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px); background-size: 30px 30px; }
+        .mac-window { background: #161b22; border-radius: 12px; border: 1px solid #30363d; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
+        .mac-header { background: #21262d; padding: 10px 16px; display: flex; align-items: center; border-bottom: 1px solid #30363d; }
+        .mac-dots { display: flex; gap: 6px; }
+        .mac-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .mac-title { flex-grow: 1; text-align: center; color: #8b949e; font-size: 13px; margin-right: 48px; font-family: monospace; }
+        .input-field { background: #0d1117; border: 1px solid #30363d; color: white; border-radius: 8px; padding: 12px; width: 100%; outline: none; margin-top: 8px; transition: 0.2s; }
+        .input-field:focus { border-color: #58a6ff; box-shadow: 0 0 0 1px #58a6ff; }
+        pre { margin: 0; color: #7ee787; font-family: monospace; font-size: 13px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .api-card { background: #161b22; border: 1px solid #30363d; border-radius: 16px; padding: 20px; transition: 0.2s; cursor: pointer; display: flex; flex-direction: column; height: 100%; }
+        .api-card:hover { transform: translateY(-3px); border-color: #58a6ff; background: #1c2128; }
+        .api-card.active { border-color: #58a6ff; box-shadow: 0 0 0 1px #58a6ff; background: #1c2128; }
+        .icon-box { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-bottom: 16px; color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .btn-execute { background: #e6edf3; color: #0d1117; font-weight: bold; border-radius: 8px; padding: 14px; width: 100%; margin-top: 16px; transition: 0.2s; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px; }
+        .btn-execute:hover { background: #c9d1d9; transform: scale(0.99); }
+    </style>
+</head>
+<body class="min-h-screen grid-bg pb-20">
+    <div class="border-b border-[#30363d] bg-[#161b22] sticky top-0 z-40 shadow-md">
+        <div class="max-w-[1400px] mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="bg-gray-800 text-white p-2 rounded text-sm font-bold border border-gray-600">ST</div>
+                <h1 class="text-xl font-bold text-white hidden sm:block">Developer Dashboard</h1>
+            </div>
+            <div class="flex items-center gap-6">
+                <div>
+                    <div class="text-[10px] text-gray-500 font-bold uppercase tracking-widest">API Key</div>
+                    <div class="text-xs font-mono text-[#58a6ff]">elijah2909_secret_key</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-[1400px] mx-auto px-6 mt-10 flex flex-col lg:flex-row gap-10">
+        <div class="lg:w-7/12">
+            <h2 class="text-3xl font-bold text-white mb-2">Movie APIs</h2>
+            <p class="text-gray-400 mb-8">Select an endpoint below to configure your request.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div class="api-card active" onclick="selectAPI('search', this, true, false)" id="card-search"><div class="icon-box" style="background: linear-gradient(135deg, #0061ff, #60efff);"><i class="fas fa-search"></i></div><h3 class="text-lg font-bold text-white mb-1">Search Movies</h3><p class="text-xs text-gray-400">Search for movies and TV shows by keyword.</p></div>
+                <div class="api-card" onclick="selectAPI('trending', this, false, false)"><div class="icon-box" style="background: linear-gradient(135deg, #8e2de2, #4a00e0);"><i class="fas fa-chart-line"></i></div><h3 class="text-lg font-bold text-white mb-1">Trending</h3><p class="text-xs text-gray-400">Get trending movies and shows globally.</p></div>
+                <div class="api-card" onclick="selectAPI('media-files', this, true, true)"><div class="icon-box" style="background: linear-gradient(135deg, #11998e, #38ef7d);"><i class="fas fa-download"></i></div><h3 class="text-lg font-bold text-white mb-1">Media Files</h3><p class="text-xs text-gray-400">Get direct mp4 stream links and .srt subtitles.</p></div>
+                <div class="api-card" onclick="selectAPI('homepage', this, false, false)"><div class="icon-box" style="background: linear-gradient(135deg, #00c6ff, #0072ff);"><i class="fas fa-home"></i></div><h3 class="text-lg font-bold text-white mb-1">Homepage</h3><p class="text-xs text-gray-400">Get homepage carousel and featured items.</p></div>
+                <div class="api-card" onclick="selectAPI('details', this, true, false)"><div class="icon-box" style="background: linear-gradient(135deg, #f12711, #f5af19);"><i class="fas fa-info-circle"></i></div><h3 class="text-lg font-bold text-white mb-1">Movie Details</h3><p class="text-xs text-gray-400">Get deep metadata about a specific movie/show.</p></div>
+                <div class="api-card" onclick="selectAPI('recommendations', this, true, false)"><div class="icon-box" style="background: linear-gradient(135deg, #ff0844, #ffb199);"><i class="fas fa-lightbulb"></i></div><h3 class="text-lg font-bold text-white mb-1">Recommendations</h3><p class="text-xs text-gray-400">Get recommended movies based on a search.</p></div>
+                <div class="api-card" onclick="selectAPI('popular-searches', this, false, false)"><div class="icon-box" style="background: linear-gradient(135deg, #fceabb, #f8b500);"><i class="fas fa-star text-orange-600"></i></div><h3 class="text-lg font-bold text-white mb-1">Popular Searches</h3><p class="text-xs text-gray-400">Get realtime popular search keywords.</p></div>
+                <div class="api-card" onclick="selectAPI('hot', this, false, false)"><div class="icon-box" style="background: linear-gradient(135deg, #ff416c, #ff4b2b);"><i class="fas fa-fire"></i></div><h3 class="text-lg font-bold text-white mb-1">Hot Content</h3><p class="text-xs text-gray-400">Get absolutely hot and trending content.</p></div>
+            </div>
+        </div>
+        <div class="lg:w-5/12 relative">
+            <div class="sticky top-24 flex flex-col gap-6" id="playground">
+                <div class="mac-window">
+                    <div class="mac-header"><div class="mac-dots"><div class="mac-dot" style="background:#ff5f56"></div><div class="mac-dot" style="background:#ffbd2e"></div><div class="mac-dot" style="background:#27c93f"></div></div><div class="mac-title" id="playground-title">request_config.json [search]</div></div>
+                    <div class="p-6">
+                        <div class="mb-4"><label class="text-xs font-bold text-gray-400 uppercase tracking-wider">Authentication Key</label><input type="password" id="apiKey" value="elijah2909_secret_key" class="input-field font-mono text-sm"></div>
+                        <div id="queryGroup" class="mb-4"><label class="text-xs font-bold text-gray-400 uppercase tracking-wider">Search Query</label><input type="text" id="query" placeholder="e.g. Avatar" class="input-field"></div>
+                        <div id="typeGroup" class="mb-4"><label class="text-xs font-bold text-gray-400 uppercase tracking-wider">Media Type</label><select id="mediaType" class="input-field" onchange="toggleEpisodeFields()"><option value="movie">Movie</option><option value="series">TV Series</option></select></div>
+                        <div id="episodeGroup" class="flex gap-4 mb-4 hidden"><div class="w-1/2"><label class="text-xs font-bold text-gray-400 uppercase tracking-wider">Season</label><input type="number" id="season" value="1" class="input-field"></div><div class="w-1/2"><label class="text-xs font-bold text-gray-400 uppercase tracking-wider">Episode</label><input type="number" id="episode" value="1" class="input-field"></div></div>
+                        <button onclick="executeRequest()" class="btn-execute"><i class="fas fa-play"></i> Execute Request</button>
+                    </div>
+                </div>
+                <div class="mac-window">
+                    <div class="mac-header"><div class="mac-dots"><div class="mac-dot" style="background:#ff5f56"></div><div class="mac-dot" style="background:#ffbd2e"></div><div class="mac-dot" style="background:#27c93f"></div></div><div class="mac-title" id="response-title">Waiting for request...</div></div>
+                    <div class="p-4 h-[400px] overflow-y-auto bg-black border-t border-[#30363d]"><pre id="json-response">{ "status": "idle" }</pre></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentEndpoint = 'search'; let currentNeedsSearch = true; let currentNeedsEpisodes = false;
+        function selectAPI(endpoint, cardElement, needsSearch, needsEpisodes) {
+            currentEndpoint = endpoint; currentNeedsSearch = needsSearch; currentNeedsEpisodes = needsEpisodes;
+            document.querySelectorAll('.api-card').forEach(c => c.classList.remove('active')); cardElement.classList.add('active');
+            document.getElementById('playground-title').innerText = `request_config.json [${endpoint}]`;
+            document.getElementById('queryGroup').style.display = needsSearch ? 'block' : 'none';
+            document.getElementById('typeGroup').style.display = needsSearch ? 'block' : 'none';
+            toggleEpisodeFields();
+            if (window.innerWidth < 1024) document.getElementById('playground').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        function toggleEpisodeFields() {
+            const type = document.getElementById('mediaType').value;
+            if (currentNeedsEpisodes && type === 'series') document.getElementById('episodeGroup').classList.remove('hidden');
+            else document.getElementById('episodeGroup').classList.add('hidden');
+        }
+        async function executeRequest() {
+            const apiKey = document.getElementById('apiKey').value; const query = document.getElementById('query').value;
+            const type = document.getElementById('mediaType').value; const season = document.getElementById('season').value; const episode = document.getElementById('episode').value;
+            if(currentNeedsSearch && !query) { document.getElementById('json-response').innerText = '{ "error": "Query cannot be empty for this endpoint!" }'; return; }
+            document.getElementById('response-title').innerText = "Fetching data..."; document.getElementById('json-response').innerText = '{ "status": "loading...", "message": "Fetching from database..." }';
+            let url = window.location.origin + `/api/${currentEndpoint}`; let params = new URLSearchParams();
+            if(currentNeedsSearch) { params.append('query', query); params.append('type', type); if(currentNeedsEpisodes && type === 'series') { params.append('season', season); params.append('episode', episode); } }
+            if(params.toString()) url += `?${params.toString()}`;
+            try {
+                const res = await fetch(url, { headers: { 'X-API-Key': apiKey, 'Accept': 'application/json' } });
+                const text = await res.text();
+                try { const data = JSON.parse(text); document.getElementById('response-title').innerText = `Status: ${res.status} OK`; document.getElementById('json-response').innerText = JSON.stringify(data, null, 2); }
+                catch(e) { document.getElementById('response-title').innerText = `Error Parsing JSON`; document.getElementById('json-response').innerText = text.substring(0, 1000); }
+            } catch(e) { document.getElementById('response-title').innerText = "Network Error"; document.getElementById('json-response').innerText = JSON.stringify({ error: e.message }, null, 2); }
+        }
+        toggleEpisodeFields();
+    </script>
+</body>
+</html>
