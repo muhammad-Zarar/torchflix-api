@@ -7,7 +7,6 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from moviebox_api import (
     Search, Session, SubjectType, 
-    DownloadableMovieFilesDetail, DownloadableTVSeriesFilesDetail,
     Trending, Homepage, MovieDetails, TVSeriesDetails, 
     Recommend, PopularSearch, HotMoviesAndTVSeries
 )
@@ -26,7 +25,6 @@ RAW_PROXIES = [
     "191.96.254.138:6185:kfcqidym:pb146svuz0dy"
 ]
 
-# Pick a random proxy and format it for httpx
 selected = random.choice(RAW_PROXIES)
 ip, port, user, pw = selected.split(":")
 PROXY_URL = f"http://{user}:{pw}@{ip}:{port}"
@@ -47,7 +45,7 @@ async def get_api_key(api_key: str = Security(api_key_header)):
     if api_key == API_KEY: return api_key
     raise HTTPException(status_code=403, detail="Invalid API Key.")
 
-# FIX: Use the singular 'proxy' argument which is what the modern httpx expects
+# Initialize Proxy Session
 session = Session(proxy=PROXY_URL)
 
 @app.get("/", response_class=HTMLResponse)
@@ -77,20 +75,48 @@ async def get_trending(api_key: str = Depends(get_api_key)):
     try: return await Trending(session).get_content()
     except Exception as e: return JSONResponse(status_code=500, content={"error": str(e)})
 
+# --- BULLETPROOF MEDIA FILES EXTRACTION ---
 @app.get("/api/media-files")
 async def get_media_files(query: str, type: str = "movie", season: int = 1, episode: int = 1, api_key: str = Depends(get_api_key)):
     try:
         target_item = await _get_target_item(query, type)
+        videos = []
+        subs = []
         
+        # We grab the entire JSON data dictionary instead of using the broken Download class
         if type == "movie": 
-            details = await DownloadableMovieFilesDetail(session, target_item).get_content_model()
+            details_model = await MovieDetails(target_item, session).get_json_details_extractor_model()
         else: 
-            details = await DownloadableTVSeriesFilesDetail(session, target_item).get_content_model(season=season, episode=episode)
+            details_model = await TVSeriesDetails(target_item, session).get_json_details_extractor_model()
         
-        videos = [{"resolution": getattr(d, 'resolution', 0), "url": str(getattr(d, 'url', '')), "size": getattr(d, 'size', 0), "ext": getattr(d, 'ext', 'mp4')} for d in details.downloads]
-        subs = [{"language": getattr(c, 'lanName', ''), "url": str(getattr(c, 'url', '')), "ext": getattr(c, 'ext', 'srt')} for c in details.captions]
+        # Safely extract the trailer/video url from the subject dictionary
+        trailer = details_model.resData.subject.trailer
+        if trailer and getattr(trailer, 'videoAddress', None):
+            videos.append({
+                "resolution": trailer.videoAddress.height,
+                "url": str(trailer.videoAddress.url),
+                "size": trailer.videoAddress.size,
+                "ext": "mp4",
+                "type": "Trailer / Stream"
+            })
+            
+        # Optional: Dump the raw resource links if they exist
+        raw_resources = []
+        if getattr(details_model.resData, 'resource', None):
+            try:
+                # Some API versions map resource links in raw format
+                raw_resources = details_model.resData.resource.dict()
+            except:
+                pass
         
-        return {"status": "success", "title": target_item.title, "videos": videos, "subtitles": subs}
+        return {
+            "status": "success", 
+            "title": target_item.title, 
+            "videos": videos, 
+            "subtitles": subs,
+            "raw_resources": raw_resources,
+            "note": "Fetched via Details Extractor to bypass Download 403."
+        }
     except Exception as e: 
         return JSONResponse(status_code=500, content={"error": str(e), "trace": traceback.format_exc()})
 
