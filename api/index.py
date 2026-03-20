@@ -1,17 +1,18 @@
 import os
 import random
 import traceback
-import urllib.parse
 from fastapi import FastAPI, Depends, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from moviebox_api import (
     Search, Session, SubjectType, 
+    DownloadableMovieFilesDetail, DownloadableTVSeriesFilesDetail,
     Trending, Homepage, MovieDetails, TVSeriesDetails, 
     Recommend, PopularSearch, HotMoviesAndTVSeries
 )
 
+# Your residential proxies to prevent Vercel from getting a 403 IP Ban
 RAW_PROXIES = [
     "31.59.20.176:6754:kfcqidym:pb146svuz0dy",
     "23.95.150.145:6114:kfcqidym:pb146svuz0dy",
@@ -30,7 +31,13 @@ ip, port, user, pw = selected.split(":")
 PROXY_URL = f"http://{user}:{pw}@{ip}:{port}"
 
 app = FastAPI(title="TorchFlix API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 API_KEY = "elijah2909_secret_key"
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -39,6 +46,7 @@ async def get_api_key(api_key: str = Security(api_key_header)):
     if api_key == API_KEY: return api_key
     raise HTTPException(status_code=403, detail="Invalid API Key.")
 
+# Initialize pure MovieBox session
 session = Session(proxy=PROXY_URL)
 
 @app.get("/", response_class=HTMLResponse)
@@ -67,66 +75,23 @@ async def get_trending(api_key: str = Depends(get_api_key)):
     try: return await Trending(session).get_content()
     except Exception as e: return JSONResponse(status_code=500, content={"error": str(e)})
 
-# ==========================================
-# HYBRID MEDIA FILES EXTRACTOR (No 403 Errors!)
-# ==========================================
+# --- THE PURE, ORIGINAL VPS DOWNLOAD LOGIC ---
 @app.get("/api/media-files")
 async def get_media_files(query: str, type: str = "movie", season: int = 1, episode: int = 1, api_key: str = Depends(get_api_key)):
     try:
         target_item = await _get_target_item(query, type)
-        videos = []
         
-        # 1. ATTEMPT DIRECT MP4 EXTRACTION FROM JSON
-        try:
-            if type == "movie": 
-                details_model = await MovieDetails(target_item, session).get_json_details_extractor_model()
-            else: 
-                details_model = await TVSeriesDetails(target_item, session).get_json_details_extractor_model()
-                
-            subject = details_model.resData.subject
-            if getattr(subject, 'trailer', None) and getattr(subject.trailer, 'videoAddress', None):
-                videos.append({
-                    "provider": "MovieBox Direct MP4",
-                    "resolution": f"{subject.trailer.videoAddress.height}p",
-                    "url": str(subject.trailer.videoAddress.url),
-                    "size_bytes": subject.trailer.videoAddress.size,
-                    "ext": "mp4",
-                    "type": "direct_mp4"
-                })
-        except Exception as e:
-            pass # Fails silently if MovieBox scrubbed the MP4 from this specific movie
-
-        # 2. ADD WORKING IFRAME BACKUPS
-        safe_title = urllib.parse.quote(target_item.title)
-        year = str(target_item.releaseDate).split("-")[0] if getattr(target_item, 'releaseDate', None) else ""
-            
-        if type == "movie":
-            videos.append({
-                "provider": "Vidsrc (Title Search Fallback)",
-                "url": f"https://vidsrc.xyz/embed/movie?title={safe_title}&year={year}",
-                "type": "iframe"
-            })
-            videos.append({
-                "provider": "EmbedSu (Title Search Fallback)",
-                "url": f"https://embed.su/embed/movie/{safe_title}",
-                "type": "iframe"
-            })
-        else:
-            videos.append({
-                "provider": "Vidsrc (Title Search Fallback)",
-                "url": f"https://vidsrc.xyz/embed/tv?title={safe_title}&year={year}&season={season}&episode={episode}",
-                "type": "iframe"
-            })
-
-        return {
-            "status": "success", 
-            "title": target_item.title, 
-            "videos": videos, 
-            "subtitles": getattr(target_item, "subtitles", [])
-        }
+        if type == "movie": 
+            details = await DownloadableMovieFilesDetail(session, target_item).get_content_model()
+        else: 
+            details = await DownloadableTVSeriesFilesDetail(session, target_item).get_content_model(season=season, episode=episode)
         
+        videos = [{"resolution": getattr(d, 'resolution', 0), "url": str(getattr(d, 'url', '')), "size": getattr(d, 'size', 0), "ext": getattr(d, 'ext', 'mp4')} for d in details.downloads]
+        subs = [{"language": getattr(c, 'lanName', ''), "url": str(getattr(c, 'url', '')), "ext": getattr(c, 'ext', 'srt')} for c in details.captions]
+        
+        return {"status": "success", "title": target_item.title, "videos": videos, "subtitles": subs}
     except Exception as e: 
-        return JSONResponse(status_code=500, content={"error": "Extraction Failed", "trace": traceback.format_exc()})
+        return JSONResponse(status_code=500, content={"error": str(e), "trace": traceback.format_exc()})
 
 @app.get("/api/homepage")
 async def get_homepage(api_key: str = Depends(get_api_key)):
