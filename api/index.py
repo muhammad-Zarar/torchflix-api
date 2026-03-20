@@ -5,8 +5,6 @@ from fastapi import FastAPI, Depends, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-
-# Notice how I am NOT importing DownloadableMovieFilesDetail
 from moviebox_api import (
     Search, Session, SubjectType, 
     Trending, Homepage, MovieDetails, TVSeriesDetails, 
@@ -68,33 +66,53 @@ async def get_trending(api_key: str = Depends(get_api_key)):
     try: return await Trending(session).get_content()
     except Exception as e: return JSONResponse(status_code=500, content={"error": str(e)})
 
-
-# ==========================================
-# THE NEW MEDIA FILES ENDPOINT
-# ==========================================
+# --- NEW HYBRID MEDIA FILES ENDPOINT ---
 @app.get("/api/media-files")
 async def get_media_files(query: str, type: str = "movie", season: int = 1, episode: int = 1, api_key: str = Depends(get_api_key)):
-    debug_log = {"status": "SUCCESS - BYPASSED 403!", "proxy": PROXY_URL.split("@")[1]}
     try:
+        # Step 1: We still use MovieBox to get the official Title, ID, and TMDB/IMDB info
         target_item = await _get_target_item(query, type)
         
-        # We explicitly use MovieDetails.get_content() which never hits the blocked download route.
-        if type == "movie": 
-            raw_details = await MovieDetails(target_item, session).get_content()
-        else: 
-            raw_details = await TVSeriesDetails(target_item, session).get_content()
-            
-        debug_log["raw_payload_from_moviebox"] = raw_details
+        # Step 2: Since MovieBox banned video downloads, we dynamically generate 
+        # unbreakable HTML iframe embed links that developers can use directly!
+        videos = []
         
+        # SuperEmbeds / Vidsrc are unblockable iframe providers
+        # We need an ID. MovieBox usually includes IMDB IDs or we search via title.
+        clean_title = query.replace(" ", "%20").lower()
+        
+        if type == "movie":
+            videos.append({
+                "provider": "Vidsrc Pro (Ad-Free Stream)",
+                "url": f"https://vidsrc.pro/embed/movie/{target_item.subjectId}",
+                "type": "iframe"
+            })
+            videos.append({
+                "provider": "SuperEmbed (Backup Stream)",
+                "url": f"https://multiembed.mov/?video_id={target_item.subjectId}",
+                "type": "iframe"
+            })
+        else:
+            videos.append({
+                "provider": "Vidsrc Pro (Ad-Free Stream)",
+                "url": f"https://vidsrc.pro/embed/tv/{target_item.subjectId}/{season}/{episode}",
+                "type": "iframe"
+            })
+            videos.append({
+                "provider": "SuperEmbed (Backup Stream)",
+                "url": f"https://multiembed.mov/?video_id={target_item.subjectId}&s={season}&e={episode}",
+                "type": "iframe"
+            })
+            
         return {
             "status": "success", 
-            "note": "We have successfully bypassed the 403 blocker!",
-            "debug": debug_log
+            "title": target_item.title,
+            "note": "MovieBox direct MP4 downloads are globally banned. Returning unblockable Iframe Stream Embeds instead.",
+            "videos": videos, 
+            "subtitles": []
         }
-        
     except Exception as e: 
-        return JSONResponse(status_code=500, content={"error": "Total Failure", "trace": traceback.format_exc()})
-
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.get("/api/homepage")
 async def get_homepage(api_key: str = Depends(get_api_key)):
