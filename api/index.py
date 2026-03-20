@@ -47,8 +47,8 @@ async def get_api_key(api_key: str = Security(api_key_header)):
     if api_key == API_KEY: return api_key
     raise HTTPException(status_code=403, detail="Invalid API Key.")
 
-# Inject proxy into the session
-session = Session(proxies={"all://": PROXY_URL})
+# FIX: Use the singular 'proxy' argument which is what the modern httpx expects
+session = Session(proxy=PROXY_URL)
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
